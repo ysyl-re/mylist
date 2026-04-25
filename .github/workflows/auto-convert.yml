@@ -1,0 +1,50 @@
+name: 自动编译并发布到 Auto 分支
+
+on:
+  push:
+    branches:
+      - main # 如果你的主分支叫 master，请改成 master。当你手动推送时也会触发！
+  schedule:
+    - cron: '0 0 * * *' # 每天北京时间上午 8 点定时抓取外部更新
+  workflow_dispatch: # 保留手动运行按钮
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出 main 分支代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 获取完整的 git 历史，这是切换分支的必要条件
+
+      - name: 下载并准备 Mihomo 内核 (amd64架构)
+        run: |
+          curl -L -o mihomo.gz https://github.com/MetaCubeX/mihomo/releases/download/v1.19.24/mihomo-linux-amd64-v1.19.24.gz
+          gunzip mihomo.gz
+          chmod +x mihomo
+
+      - name: 抓取远程 ChinaIPs 规则
+        run: |
+          curl -L -o input.yaml "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaIPs/ChinaIPs_IP.yaml"
+
+      - name: 执行 MRS 转换编译
+        run: |
+          ./mihomo convert-ruleset ipcidr yaml input.yaml ChinaIPs.mrs
+
+      - name: 切换分支并强制推送 (核心魔法)
+        run: |
+          # 1. 告诉 Git 机器人是谁
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # 2. 强制创建并切换到 auto 分支（以当前 main 分支为基础）
+          git checkout -B auto
+          
+          # 3. 强制添加编译好的 .mrs 文件 (使用 -f 防止你之前在 .gitignore 里屏蔽了它)
+          git add -f ChinaIPs.mrs
+          
+          # 4. 提交更改。如果文件没变化（比如上游没更新），则跳过不报错
+          git commit -m "🤖 自动编译更新: $(date +'%Y-%m-%d %H:%M:%S')" || echo "规则无变化，跳过提交"
+          
+          # 5. 强制推送到远程仓库的 auto 分支 (-f 非常关键，保持分支纯净)
+          git push -f origin auto
