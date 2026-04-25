@@ -1,4 +1,4 @@
-name: 第三方规则全自动编译 (Auto 分支)
+name: Auto Build ChinaIPs
 
 on:
   schedule:
@@ -11,8 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write # 允许推送到 auto 分支
-      actions: write  # 允许 v7 插件删除多余的运行日志
+      contents: write 
+      actions: write  
 
     steps:
       - name: 下载并准备 Mihomo 内核
@@ -55,11 +55,9 @@ jobs:
       - name: 清理 Actions 历史日志 (v7 稳定版)
         uses: igorjs/gh-actions-clean-workflow@v7
         with:
-          # 精准打击：只清理这个特定的工作流日志
-          workflow_names: "第三方规则全自动编译 (Auto 分支)"
-          # 极端克制：无视天数，按次数清理
+          # 修复点：换成纯英文和空格，完美通过正则校验
+          workflow_names: "Auto Build ChinaIPs"
           runs_older_than: 0
-          # 强迫症福音：只保留最近 3 次的运行记录
           runs_to_keep: 3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
