@@ -2,8 +2,7 @@ name: Auto Build ChinaIPs
 
 on:
   schedule:
-    # UTC时间19:45，即北京时间凌晨03:45。完美对接04:00的OpenClash更新
-    - cron: '45 19 * * *' 
+    - cron: '45 19 * * *' # 北京时间03:45 
   workflow_dispatch:
 
 jobs:
@@ -11,53 +10,54 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write 
-      actions: write  
+      contents: write # 允许孤儿分支强制推送
+      actions: write  # 允许 v7 插件删除日志
 
     steps:
-      - name: 下载并准备 Mihomo 内核
+      - name: 动态获取并下载最新版 Mihomo 内核
         run: |
-          curl -L -o mihomo.gz https://github.com/MetaCubeX/mihomo/releases/download/v1.19.24/mihomo-linux-amd64-v1.19.24.gz
+          # 提取最新版本号
+          LATEST_VERSION=$(curl -s https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "🤖 探测到 Mihomo 最新版本: $LATEST_VERSION"
+          
+          # 拼接并下载
+          DOWNLOAD_URL="https://github.com/MetaCubeX/mihomo/releases/download/${LATEST_VERSION}/mihomo-linux-amd64-${LATEST_VERSION}.gz"
+          echo "🔗 开始下载: $DOWNLOAD_URL"
+          
+          curl -L -o mihomo.gz "$DOWNLOAD_URL"
           gunzip mihomo.gz
           chmod +x mihomo
 
-      - name: 抓取第三方 ChinaIPs 规则
+      - name: 下载第三方规则
         run: |
-          curl -L -o input.yaml "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaIPs/ChinaIPs_IP.yaml"
+          curl -L -o china_ip.yaml "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaIPs/ChinaIPs_IP.yaml"
 
-      - name: 执行 MRS 转换编译
+      - name: 编译mrs
         run: |
-          ./mihomo convert-ruleset ipcidr yaml input.yaml ChinaIPs.mrs
+          ./mihomo convert-ruleset ipcidr yaml china_ip.yaml ChinaIPs.mrs
 
-      - name: 纯净打包并强推至 auto 分支 (绝对隔离魔法)
+      - name: 新建孤儿分支并强制覆盖auto分支
         run: |
-          # 1. 新建一个极其干净的发布目录，把编译好的文件丢进去
           mkdir publish
-          mv ChinaIPs.mrs publish/
+          mv *.mrs publish/
           cd publish
           
-          # 2. 在这个空目录里初始化一个全新的 Git 仓库
           git init
-          
-          # 3. 创建一个没有历史包袱的“孤儿分支”叫 auto
           git checkout --orphan auto
           
           git config user.email "action@github.com"
           git config user.name "GitHub Action"
           
-          # 4. 提交我们唯一的产物
-          git add ChinaIPs.mrs
-          git commit -m "🤖 第三方规则编译更新: $(date +'%Y-%m-%d %H:%M:%S')"
+          git add *.mrs
+          git commit -m "🤖 规则编译更新: $(date +'%Y-%m-%d %H:%M:%S')"
           
-          # 5. 带着 Token 强制推送，覆盖线上的 auto 分支
           git push -f https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git auto
           
-      - name: 清理 Actions 历史日志 (v7 稳定版)
+      - name: 清理 Actions 历史日志
         uses: igorjs/gh-actions-clean-workflow@v7
         with:
-          # 修复点：换成纯英文和空格，完美通过正则校验
           workflow_names: "Auto Build ChinaIPs"
           runs_older_than: 0
-          runs_to_keep: 3
+          runs_to_keep: 3 # 面板永远只保留最近 3 天的绿灯记录
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
