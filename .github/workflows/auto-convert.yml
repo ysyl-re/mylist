@@ -1,29 +1,27 @@
-name: 自动编译并发布到 Auto 分支
+name: 第三方规则全自动编译 (Auto 分支)
 
 on:
-  push:
-    branches:
-      - main # 如果你的主分支叫 master，请改成 master。当你手动推送时也会触发！
   schedule:
-    - cron: '0 0 * * *' # 每天北京时间上午 8 点定时抓取外部更新
-  workflow_dispatch: # 保留手动运行按钮
+    # UTC时间19:45，即北京时间凌晨03:45。完美对接04:00的OpenClash更新
+    - cron: '45 19 * * *' 
+  workflow_dispatch:
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    steps:
-      - name: 检出 main 分支代码
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # 获取完整的 git 历史，这是切换分支的必要条件
+    timeout-minutes: 10
+    permissions:
+      contents: write # 允许推送到 auto 分支
+      actions: write  # 允许 v7 插件删除多余的运行日志
 
-      - name: 下载并准备 Mihomo 内核 (amd64架构)
+    steps:
+      - name: 下载并准备 Mihomo 内核
         run: |
           curl -L -o mihomo.gz https://github.com/MetaCubeX/mihomo/releases/download/v1.19.24/mihomo-linux-amd64-v1.19.24.gz
           gunzip mihomo.gz
           chmod +x mihomo
 
-      - name: 抓取远程 ChinaIPs 规则
+      - name: 抓取第三方 ChinaIPs 规则
         run: |
           curl -L -o input.yaml "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaIPs/ChinaIPs_IP.yaml"
 
@@ -31,20 +29,37 @@ jobs:
         run: |
           ./mihomo convert-ruleset ipcidr yaml input.yaml ChinaIPs.mrs
 
-      - name: 切换分支并强制推送 (核心魔法)
+      - name: 纯净打包并强推至 auto 分支 (绝对隔离魔法)
         run: |
-          # 1. 告诉 Git 机器人是谁
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          # 1. 新建一个极其干净的发布目录，把编译好的文件丢进去
+          mkdir publish
+          mv ChinaIPs.mrs publish/
+          cd publish
           
-          # 2. 强制创建并切换到 auto 分支（以当前 main 分支为基础）
-          git checkout -B auto
+          # 2. 在这个空目录里初始化一个全新的 Git 仓库
+          git init
           
-          # 3. 强制添加编译好的 .mrs 文件 (使用 -f 防止你之前在 .gitignore 里屏蔽了它)
-          git add -f ChinaIPs.mrs
+          # 3. 创建一个没有历史包袱的“孤儿分支”叫 auto
+          git checkout --orphan auto
           
-          # 4. 提交更改。如果文件没变化（比如上游没更新），则跳过不报错
-          git commit -m "🤖 自动编译更新: $(date +'%Y-%m-%d %H:%M:%S')" || echo "规则无变化，跳过提交"
+          git config user.email "action@github.com"
+          git config user.name "GitHub Action"
           
-          # 5. 强制推送到远程仓库的 auto 分支 (-f 非常关键，保持分支纯净)
-          git push -f origin auto
+          # 4. 提交我们唯一的产物
+          git add ChinaIPs.mrs
+          git commit -m "🤖 第三方规则编译更新: $(date +'%Y-%m-%d %H:%M:%S')"
+          
+          # 5. 带着 Token 强制推送，覆盖线上的 auto 分支
+          git push -f https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git auto
+          
+      - name: 清理 Actions 历史日志 (v7 稳定版)
+        uses: igorjs/gh-actions-clean-workflow@v7
+        with:
+          # 精准打击：只清理这个特定的工作流日志
+          workflow_names: "第三方规则全自动编译 (Auto 分支)"
+          # 极端克制：无视天数，按次数清理
+          runs_older_than: 0
+          # 强迫症福音：只保留最近 3 次的运行记录
+          runs_to_keep: 3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
