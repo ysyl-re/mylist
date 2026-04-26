@@ -2,7 +2,7 @@ name: Auto Build ChinaIPs
 
 on:
   schedule:
-    - cron: '45 19 * * *' # 北京时间03:45 
+    - cron: '06 18 * * *' # 北京时间02:06 
   workflow_dispatch:
 
 jobs:
