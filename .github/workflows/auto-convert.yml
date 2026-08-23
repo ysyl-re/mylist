@@ -36,7 +36,7 @@ jobs:
       - name: 编译mrs
         run: |
           ./mihomo convert-ruleset ipcidr yaml china_ip.yaml ChinaIPs.mrs
-          ./mihomo convert-ruleset ipcidr txt china_ip.txt ChinaBGP.mrs
+          ./mihomo convert-ruleset ipcidr txt china_bgp.txt ChinaBGP.mrs
 
       - name: 新建孤儿分支并强制覆盖auto分支
         run: |
